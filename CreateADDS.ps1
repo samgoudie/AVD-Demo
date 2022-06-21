@@ -2,14 +2,18 @@ Configuration Main
 {
 
 Param ( 
-	[string] $nodeName,
-	[string] $domainName,
-	[System.Management.Automation.PSCredential]$domainAdminCredentials
+        [Parameter(Mandatory)]
+	  [string] $domainName,
+	
+        [Parameter(Mandatory)]
+        [System.Management.Automation.PSCredential]$domainAdminCredentials
 	)
 
-Import-DscResource -ModuleName PSDesiredStateConfiguration, xActiveDirectory
+Import-DscResource -ModuleName PSDesiredStateConfiguration, xActiveDirectory, xPendingReboot, xStorage, xNetworking, ComputerManagementDSC
 
-Node $AllNodes.Where{$_.Role -eq "DC"}.Nodename
+[System.Management.Automation.PSCredential ]$DomainCreds = New-Object System.Management.Automation.PSCredential ("${DomainName}\$($domainAdminCredentials.UserName)", $domainAdminCredentials.Password)
+
+Node localhost
   {
 	  LocalConfigurationManager
         {
@@ -17,6 +21,19 @@ Node $AllNodes.Where{$_.Role -eq "DC"}.Nodename
             RebootNodeIfNeeded = $true
             ActionAfterReboot = 'ContinueConfiguration'
             AllowModuleOverwrite = $true
+        }
+        
+	  WindowsFeature DNS
+        {
+            Ensure = "Present"
+            Name = "DNS"
+        }
+        
+        WindowsFeature DnsTools
+        {
+            Ensure = "Present"
+            Name = "RSAT-DNS-Server"
+            DependsOn = "[WindowsFeature]DNS"
         }
  
         WindowsFeature DNS_RSAT
@@ -29,18 +46,21 @@ Node $AllNodes.Where{$_.Role -eq "DC"}.Nodename
         { 
             Ensure = 'Present'
             Name = 'AD-Domain-Services'
+		DependsOn = "[WindowsFeature]DNS"
         } 
  
         WindowsFeature RSAT_AD_AdminCenter 
         {
             Ensure = 'Present'
             Name   = 'RSAT-AD-AdminCenter'
+		DependsOn = "[WindowsFeature]DNS"
         }
  
         WindowsFeature RSAT_ADDS 
         {
             Ensure = 'Present'
             Name   = 'RSAT-ADDS'
+		DependsOn = "[WindowsFeature]DNS"
         }
  
         WindowsFeature RSAT_AD_PowerShell 
@@ -69,8 +89,8 @@ Node $AllNodes.Where{$_.Role -eq "DC"}.Nodename
         xADDomain CreateForest 
         { 
             DomainName = $domainName           
-            DomainAdministratorCredential = $domainAdminCredentials
-            SafemodeAdministratorPassword = $domainAdminCredentials
+            DomainAdministratorCredential = $DomainCreds
+            SafemodeAdministratorPassword = $DomainCreds
             DatabasePath = "C:\Windows\NTDS"
             LogPath = "C:\Windows\NTDS"
             SysvolPath = "C:\Windows\Sysvol"
